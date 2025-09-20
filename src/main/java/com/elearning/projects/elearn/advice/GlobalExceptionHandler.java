@@ -1,22 +1,31 @@
 package com.elearning.projects.elearn.advice;
 
+import com.elearning.projects.elearn.exception.OperationFailedException;
+import com.elearning.projects.elearn.exception.ResourceNotFoundException;
 import io.jsonwebtoken.JwtException;
-
-import java.util.stream.Collectors;
-
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-import com.elearning.projects.elearn.exception.OperationFailedException;
-import com.elearning.projects.elearn.exception.ResourceNotFoundException;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler implements ResponseBodyAdvice<Object> {
+
+    // ===================================================================================
+    // EXCEPTION HANDLING (Using your preferred structure)
+    // ===================================================================================
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiResponse<?>> handleResourceNotFound(ResourceNotFoundException exception) {
@@ -40,7 +49,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<?>> handleJwtException(JwtException ex) {
         ApiError apiError = ApiError.builder()
                 .status(HttpStatus.UNAUTHORIZED)
-                .message(ex.getMessage())
+                .message("Invalid or expired JWT token.")
                 .build();
         return buildErrorResponseEntity(apiError);
     }
@@ -49,29 +58,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<?>> handleAccessDeniedException(AccessDeniedException ex) {
         ApiError apiError = ApiError.builder()
                 .status(HttpStatus.FORBIDDEN)
+                .message("Access Denied: You do not have permission to perform this action.")
+                .build();
+        return buildErrorResponseEntity(apiError);
+    }
+    
+    @ExceptionHandler(OperationFailedException.class)
+    public ResponseEntity<ApiResponse<?>> handleOperationFailed(OperationFailedException ex) {
+        ApiError apiError = ApiError.builder()
+                .status(HttpStatus.CONFLICT)
                 .message(ex.getMessage())
                 .build();
         return buildErrorResponseEntity(apiError);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<?>> handleInternalServerError(Exception exception) {
-        ApiError apiError = ApiError.builder()
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .message(exception.getMessage())
-                .build();
-        return buildErrorResponseEntity(apiError);
-    }
-
-    private ResponseEntity<ApiResponse<?>> buildErrorResponseEntity(ApiError apiError) {
-        return new ResponseEntity<>(new ApiResponse<>(apiError), apiError.getStatus());
-    }
-
-    // Add this method to your GlobalExceptionHandler.java
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<?>> handleValidationException(MethodArgumentNotValidException ex) {
         String errorMessage = ex.getBindingResult().getFieldErrors().stream()
-                .map(fieldError -> fieldError.getDefaultMessage())
+                .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
                 .collect(Collectors.joining(", "));
 
         ApiError apiError = ApiError.builder()
@@ -80,13 +84,42 @@ public class GlobalExceptionHandler {
                 .build();
         return buildErrorResponseEntity(apiError);
     }
-     // (NEW) Add this handler for business logic conflicts
-    @ExceptionHandler(OperationFailedException.class)
-    public ResponseEntity<ApiResponse<Object>> handleOperationFailed(OperationFailedException ex) {
-        ApiError apiError = new ApiError(HttpStatus.CONFLICT, ex.getMessage(), null);
-        ApiResponse<Object> response = new ApiResponse<>(apiError);
-        return new ResponseEntity<>(response, HttpStatus.CONFLICT); // Returns 409 Conflict
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<?>> handleInternalServerError(Exception exception) {
+        // Log the exception here for debugging purposes
+        // e.g., log.error("An unexpected error occurred", exception);
+        ApiError apiError = ApiError.builder()
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .message("An unexpected internal server error occurred.")
+                .build();
+        return buildErrorResponseEntity(apiError);
     }
 
+    private ResponseEntity<ApiResponse<?>> buildErrorResponseEntity(ApiError apiError) {
+        return new ResponseEntity<>(new ApiResponse<>(apiError), apiError.getStatus());
+    }
 
+    // ===================================================================================
+    // SUCCESS RESPONSE WRAPPING
+    // ===================================================================================
+
+    @Override
+    public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
+        return true;
+    }
+
+    @Override
+    public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType selectedContentType, Class<? extends HttpMessageConverter<?>> selectedConverterType, ServerHttpRequest request, ServerHttpResponse response) {
+        List<String> allowedRoutes = List.of("/v3/api-docs", "/actuator");
+        boolean isAllowed = allowedRoutes.stream().anyMatch(route -> request.getURI().getPath().contains(route));
+
+        // If the body is already our standard ApiResponse (likely from an error handler), don't wrap it again.
+        if (body instanceof ApiResponse<?> || isAllowed) {
+            return body;
+        }
+
+        return new ApiResponse<>(body);
+    }
 }
+

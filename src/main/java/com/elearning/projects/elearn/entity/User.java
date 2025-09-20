@@ -1,13 +1,12 @@
 package com.elearning.projects.elearn.entity;
 
+import com.elearning.projects.elearn.entity.enums.Role;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
-
-import com.elearning.projects.elearn.entity.enums.Role;
 
 import java.util.Collection;
 import java.util.List;
@@ -33,13 +32,18 @@ public class User implements UserDetails {
 
     private String name;
 
-    // Add this field to your User.java entity
     @Column
     private String phoneNumber;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @Enumerated(EnumType.STRING)
     private Set<Role> roles;
+
+    // --- ADD THIS RELATIONSHIP ---
+    // This connects the User to the assets they have been assigned.
+    @OneToMany(mappedBy = "assignedTo", fetch = FetchType.LAZY)
+    private List<Asset> assignedAssets;
+    // ----------------------------
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -51,6 +55,28 @@ public class User implements UserDetails {
     @Override
     public String getUsername() {
         return email;
+    }
+
+    // The following methods from UserDetails are often provided by default
+    // or can be customized as needed.
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
     }
 
     @Override
