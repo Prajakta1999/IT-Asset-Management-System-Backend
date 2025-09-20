@@ -23,5 +23,5 @@ public class SignUpRequestDto {
     private String password;
     
     @NotNull(message = "Role is required")
-    private Role role; // Add role selection - INSTRUCTOR or STUDENT
+    private Role role; // Add role selection - admin or EMPLOYEE
 }
